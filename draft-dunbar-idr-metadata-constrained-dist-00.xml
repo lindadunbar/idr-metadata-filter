@@ -1,0 +1,455 @@
+
+<?Pub Inc?>
+<?rfc toc="yes"?>
+<?rfc tocompact="yes"?>
+<?rfc tocdepth="3"?>
+<?rfc tocindent="yes"?>
+<?rfc symrefs="yes"?>
+<?rfc sortrefs="yes"?>
+<?rfc comments="yes"?>
+<?rfc inline="yes"?>
+<?rfc compact="yes"?>
+<?rfc subcompact="no"?>
+<rfc category="std" docName="draft-dunbar-idr-metadata-constrained-dist-00"
+     ipr="trust200902">
+  <front>
+
+
+    <title abbrev="Metadata Constrained Dist">
+	Metadata Constrained Distribution 
+	</title>
+
+    <author fullname="Linda Dunbar" initials="L. " surname="Dunbar">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <city>Dallas, TX</city>
+          <country>USA</country>
+		</postal>
+        <email>ldunbar@futurewei.com</email>
+      </address>
+    </author>
+
+        <author fullname="Alvaro Retana" initials="A. " surname="Retana">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>aretana.ietf@gmail.com</email>
+      </address>
+    </author>
+
+
+    <date year="2025"/>
+
+    <abstract>
+      <t>This document defines the Metadata-Filter (MF) Subsequent Address Family Identifier (SAFI). A BGP speaker uses MF to signal its interest or non-interest in receiving service metadata attributes (e.g., the 5G Edge Metadata Path Attribute) on routes that carry specified Route Targets (RTs), while leaving reachability unchanged. The mechanism targets iBGP topologies with Route Reflectors (RRs). It follows the RTC (RFC4684) operational model but applies it to service metadata, rather than NLRI distribution, to reduce UPDATE size and control-plane churn.
+		</t>
+    </abstract>
+
+    <note title="Requirements Language">
+      <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+      "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+      document are to be interpreted as described in <xref
+      target="RFC2119"></xref> <xref target="RFC8174"></xref>
+      when, and only when, they appear in all
+      capitals, as shown here.</t>
+    </note>
+  </front>
+
+  <middle>
+    <section title="Introduction">
+      <t>Emerging deployments (e.g., the IETF CATS effort) can attach compute/capacity-related service metadata to routes—such as latency, load, CPU/GPU availability, and queue depth—for ingress nodes to select optimal paths not only based on network distance but also the service enviroment for the ultra-low latencey services. These attributes can proliferate per service and churn rapidly. In many 5G networks, ingress nodes (UPFs or adjacent PEs) have constrained control-plane resources, and most UE sessions they anchor are not ultra-low-latency; they neither need nor can efficiently process large, fast-changing metadata on every route. Indiscriminate distribution inflates UPDATE size, increases RR/PE CPU and memory consumption, and can slow convergence under churn.</t>
+	  
+	  <t>In typical iBGP topologies with Route Reflectors, data-center/edge nodes can advertise routes with service metadata toward the RR without knowing which ingress peers will use them. Receivers therefore need a way to decline metadata for uninterested classes while continuing to receive reachability. The Metadata-Filter (MF) SAFI provides this: a receiver signals its interest or non-interest in service metadata for routes that carry specified Route Targets (RTs); the RR installs standing policy for that peer and omits service metadata on matching advertisements, leaving route distribution unchanged and advertisements to other peers unaffected.</t>
+
+	  <t>Importantly for 5G deployments, a UPF’s interest in metadata is dynamic. When Ultra-Low Latency services/UEs roam out of the UPF’s serving range (and are no longer anchored there), the UPF can advertise MF entries for the corresponding service class RT to suppress receipt of metadata; when those services return, the UPF withdraws the MF entries to resume receiving metadata. MF thus lets ingress nodes adjust metadata delivery as service placement and UE anchoring change, while keeping reachability intact.</t>
+
+   </section>
+
+   <section title="Conventions used in this document">
+     <t>The following conventions are used in this document. </t>
+	 <list
+          style="hanging">
+
+          <t hangText="Edge DC:">Edge Data Center, which provides the hosting environment for the edge services. An Edge DC might host 5G core functions in addition to the frequently used edge services.</t>
+		  <t hangText="gNB:">next generation Node B [TS23.501]</t>
+		  <t hangText="RTT:">Round-trip Time</t>
+		  <t hangText="PSA:">PDU Session Anchor (UPF) [TS23.501]</t>
+		  <t hangText="UE:">User Equipment</t>
+		  <t hangText="UPF:">User Plane Function [TS23.501]</t>
+		  <t hangText="Service Metadata:">Path attributes that convey compute/capacity signals intended to aid
+          path selection (e.g., the 5G Edge <spanx style="emph">Metadata Path Attribute</spanx> defined in [idr-5g-edge-service-metadata]).</t>
+	</list> 
+	<t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 [RFC8174] when, and only when, they appear in all capitals, as shown here.
+	</t>
+   </section>
+   
+	<section title="Problem Statement and Goals">
+	<section title="Problem Statement">
+		<t>Deployments that attach service metadata (e.g., compute/capacity signals such as latency, load, CPU/GPU availability, and queue depth) to routes enable ingress nodes to make better path choices for certain classes of traffic. However, only a small number of services—primarily ultra-low-latency services—need to incorporate Service Metadata into path computation; the majority do not. Propagating these fast-changing attributes network-wide, regardless of receiver intent and capability, inflates UPDATE size, increases RR/PE CPU and memory utilization, and can slow convergence under churn.</t>
+
+		<t>In typical 5G deployments, the User Plane Function (UPF) (or its adjacent PE) is interested in a small, preconfigured set of services, often determined by service grade (e.g., ultra-low-latency vs. best-effort). The UPF SHOULD be able to indicate that it only wants metadata for those services and does not want metadata for others. Often, nodes in the data center that originate the routes generally do not know which ingress nodes are interested in metadata, so they attach metadata by default when announcing the routes. That asymmetry causes unnecessary distribution of heavy, rapidly changing attributes to peers that will not use them.</t>
+
+		<t>What is needed is a receiver-driven mechanism that allows an ingress node to decline receiving service metadata for selected classes of routes, without suppressing the underlying reachability, so that metadata is delivered only to peers that have expressed interest.</t>
+	</section>
+	
+	<section title = "Goals">
+	<t>
+	The mechanism defined in this document, the Metadata-Filter (MF) SAFI, enables an ingress speaker to signal its RR to install persistent, per-peer filter state keyed by Route Targets (RTs), so that service metadata is omitted only on advertisements to that speaker, while reachability is unchanged.</t> 
+	<list style="hanging">
+		<t><spanx style="emph">Selective distribution:</spanx> Omit service metadata on routes that carry specified RTs, while leaving reachability unchanged.</t>
+        <t><spanx style="emph">Receiver-driven and persistent:</spanx> Apply as standing policy to current and future matching routes until withdrawn or the session resets.</t>
+        <t><spanx style="emph">Operational safety:</spanx> Reduce control-plane churn and UPDATE size for uninterested peers; enable incremental rollout without affecting route availability.</t>
+        <t><spanx style="emph">Orthogonality to RTC:</spanx> Complement <xref target="RFC4684"/> by constraining metadata (not NLRI distribution), allowing RTC to limit route flooding and MF to limit metadata propagation.</t>
+	</list>
+	<t>Non-Goals: Metadata Filter does not define new path-selection algorithms, does not alter the decision process for reachability, and does not restrict distribution of routes themselves (that remains the domain of RTC and existing policy).</t>
+	</section>
+	</section>
+	
+	<section title ="Overview of the Metadata-Filter SAFI">
+		<t>An ingress node signals its RR by advertising an MF NLRI (AFI=IPv4/IPv6, SAFI=TBD-MF) that encodes a <spanx style="emph">Route Target (RT)</spanx>. Upon receiving this MF NLRI from that ingress peer, the RR installs per-peer filter state keyed by the RT. While the filter is present, when the RR advertises any route that carries the RT to that same ingress peer, it omits the service-metadata attributes; advertisements of the same route to other peers are unchanged. The filter persists until the RR receives an MF withdrawal from that peer or the BGP session resets. (If a non-RR distribution node performs redistribution, the same behavior applies at that node.)</t>
+
+		<t>This mechanism is orthogonal to RTC. RTC constrains which routes are sent; Metadata Filter constrains which metadata attributes accompany routes.</t>
+	
+	<section title = "Service Metadata Attributes">
+	<t>“Service metadata” refers to attributes such as the Metadata Path Attribute defined for 5G edge service metadata [5g-edge-service-metadata]; future attributes may be added. The IETF CATS WG is also defining additional service-metadata types (e.g., latency, processing load, queue depth) for compute-aware traffic steering [CATS-Metrics]. (See Section 14 for IANA considerations.)</t>
+
+	</section>
+	
+	</section>
+
+	<section title = "Capability and Address Family">
+	<t>Peers MUST negotiate support via MP-BGP Capability (RFC 4760), advertising (AFI=1|2, SAFI=TBD-MF). MF NLRIs MUST NOT be exchanged absent this capability. The Next Hop in MP_REACH MUST be present and MUST be ignored on receipt.</t>
+	</section>
+	
+	<section title = "Metadata Filter NLRI Wire Format">
+	<t>The MF NLRI is encoded in MP_REACH_NLRI/MP_UNREACH_NLRI with (AFI=IPv4|IPv6, SAFI=TBD-MF):</t>
+      <t>
+        <list style="hanging">
+          <t hangText="Length (1 octet):">Number of octets that follow.</t>
+          <t hangText="Flags (1 octet):">
+            <list style="symbols">
+              <t>ET (Entity Type, 1 bit): <spanx style="emph">MUST be 1</spanx> (RT). Values other than 1
+              <bcp14>MUST</bcp14> be treated as withdrawn.</t>
+              <t>Reserved (7 bits): set to 0 on transmit; ignore on receive.</t>
+            </list>
+          </t>
+          <t hangText="Entity (8 octets):">
+            Route Target value, identical to the RT Extended Community layout:
+            Type(1) | Sub-Type(1) | Value(6) (e.g., 2-octet ASN + 4-octet number,
+            or 4-octet ASN + 2-octet number, or IPv4-addr(4) + 2-octet number).
+          </t>
+        </list>
+      </t>
+      <t>
+        <spanx style="emph">Note:</spanx> Prefix-scoped entities are not part of this version. Receivers
+        <bcp14>MUST</bcp14> ignore (treat as withdrawn) any MF NLRI that does not set ET=1.
+      </t>
+	</section>
+	
+	 <section anchor="processing" title="Processing Semantics (RT Matching)">
+      <t>
+        Upon receiving an MF NLRI from a peer, the RR creates or refreshes a per-peer filter entry keyed by the RT.
+        For any route that <spanx style="emph">carries an equal RT</spanx>, the RR <bcp14>MUST</bcp14> omit service-metadata
+        attributes when advertising that route to the originating peer. Other attributes and reachability are propagated normally.
+        The entry is removed when an MF withdrawal for the RT is received, or on session reset.
+      </t>
+   
+	 </section>
+
+   
+	<section anchor="rt-rationale" title="Rationale for RT-Scoped Filtering">
+  <t>
+    This specification limits Metadata-Filter (MF) scope to <spanx style="emph">Route Targets (RTs)</spanx>
+    because RTs already delineate service classes and policy domains in VPNv4/v6 and EVPN. In operational
+    practice, services are grouped by RT (e.g., ultra-low-latency vs. best-effort), and data-center/edge
+    nodes can tag routes with both the base VPN RT (for reachability/RTC) and a <spanx style="emph">service-class RT</spanx>
+    (for metadata scoping). MF then matches on the service-class RT to control delivery of service metadata,
+    while reachability continues to follow the VPN RT and existing import/export policy.
+  </t>
+
+  <t>
+    RT-scoped filtering is sufficient and preferable for the following reasons:
+  </t>
+  <t>
+    <list style="symbols">
+      <t><spanx style="emph">Operational fit:</spanx> RTs are the native unit of import/export and route reflection
+      policy. Expressing “which services receive metadata” as RTs aligns with current configuration models and avoids
+      per-prefix policy lists that drift from service intent.</t>
+
+      <t><spanx style="emph">5G/UPF alignment:</spanx> In 5G, the UPF typically consumes metadata only for a small, pre-configured set of service grades (e.g., ULL). Modeling each grade as a service-class RT lets DC/edge nodes tag the applicable routes; ingress nodes that require metadata simply do not advertise (or withdraw) MF for that RT, whereas ingress nodes that do not require metadata advertise MF for the RT so the RR omits service-metadata on advertisements to that ingress.</t>
+
+      <t><spanx style="emph">Simplicity and scale at the RR:</spanx> RT-only MF reduces reflection-path work to a small,
+      per-peer set-membership check (“does any RT on this route match the peer’s MF set?”). Prefix-scoped MF would require
+      per-peer longest-match lookups and larger state structures, increasing RR CPU/memory without a proportionate benefit.</t>
+
+      <t><spanx style="emph">Stable semantics:</spanx> Prefix scoping introduces precedence rules, aggregation/renumbering
+      sensitivity, and overlap corner cases. RT scoping remains stable as addressing changes, because the RT continues to
+      identify the service class independent of prefixes.</t>
+
+      <t><spanx style="emph">Clean interplay with RTC:</spanx> Route Target Constraints (<xref target="RFC4684"/>) governs
+      which routes are distributed; MF governs which <spanx style="emph">service-metadata</spanx> accompanies those routes.
+      Keeping MF keyed to RT preserves this separation of concerns and avoids prefix-driven corner cases in RTC topologies.</t>
+
+      <t><spanx style="emph">Extensibility preserved:</spanx> If a future deployment demonstrates genuine need for prefix
+      granularity, MF can be extended with a prefix entity in a future revision without changing the RT-only wire format
+      specified here. Receivers <bcp14>MUST</bcp14> ignore unknown entity types, ensuring interoperability.</t>
+    </list>
+  </t>
+
+  <t>
+    Accordingly, this document specifies only <spanx style="emph">RT-scoped</spanx> MF entries. RRs <bcp14>MUST</bcp14>
+    match routes carrying the indicated RT and omit service-metadata for the requesting peer, leaving reachability and
+    advertisements to other peers unchanged.
+  </t>
+
+  <t>
+    <spanx style="emph">Design pattern (illustrative):</spanx> An operator defines a service-class RT for ultra-low-latency
+    (e.g., <spanx style="emph">RT-ULL</spanx>). DC/edge nodes tag ULL routes with both the base VPN RT and RT-ULL and attach
+    service metadata. Ingress nodes that use ULL metadata refrain from installing MF for RT-ULL; others install MF[RT-ULL] so
+    their RR omits metadata while still advertising the routes.
+  </t>
+</section>
+
+
+
+	<section anchor="mf-state" title="Adds, Withdrawals, and State Handling">
+	<t>
+    An <spanx style="emph">MF add</spanx> is signaled by
+    <spanx style="emph">MP_REACH_NLRI</spanx> (AFI=IPv4|IPv6, SAFI=TBD-MF) carrying one or more
+    MF NLRIs (RT entities). Receipt by the RR from an ingress peer <bcp14>MUST</bcp14> create or
+    refresh the corresponding per-peer filter entries. An <spanx style="emph">MF remove</spanx> is
+    signaled by <spanx style="emph">MP_UNREACH_NLRI</spanx> (AFI=IPv4|IPv6, SAFI=TBD-MF) carrying
+    the MF NLRIs to be withdrawn; receipt <bcp14>MUST</bcp14> delete those entries. Duplicate adds are
+    idempotent; unknown entity types or malformed NLRIs are handled per Section "Error Handling"
+    (e.g., treat-as-withdraw, <xref target="RFC7606"/>). All MF state for a peer is implicitly removed
+    on BGP session reset.
+	</t>
+	<t>
+    Upon MF add/remove, the RR <bcp14>SHOULD</bcp14> re-evaluate affected routes for that peer and
+    <bcp14>SHOULD</bcp14> schedule incremental re-advertisement so that matching routes are sent with
+    or without service metadata as required. Implementations <bcp14>SHOULD</bcp14> rate-limit and batch
+    MF-driven recomputation within a short, bounded advertisement window to avoid control-plane spikes.
+    Support for Enhanced Route Refresh (ERR, <xref target="RFC7313"/>) is <bcp14>RECOMMENDED</bcp14> to
+    facilitate on-demand resynchronization.
+	</t>
+	</section>
+
+
+      <section anchor="errors" title="Error Handling">
+        <t>
+          Malformed Metadata Filter NLRI <bcp14>MUST</bcp14> be treated-as-withdraw (<xref target="RFC7606"/>). Unknown RT Type/Sub-Type <bcp14>SHOULD</bcp14> be ignored
+          (treat as withdrawn). Length inconsistencies <bcp14>SHOULD</bcp14> result in treating the specific MF NLRI as withdrawn; the session <bcp14>MUST NOT</bcp14>
+          be reset solely for a single bad Metadata Filter NLRI.
+        </t>
+      </section>
+
+	
+	   <section anchor="examples" title="Examples">
+     
+        <t>
+          Receiver signals “omit metadata for RT=64512:100”. Sender installs per-peer policy; any route carrying RT=64512:100 to this peer is advertised without service-metadata.
+        </t>
+        <sourcecode type="text">
+		UPDATE
+			Path Attributes:
+			ORIGIN: IGP
+			AS_PATH: (iBGP)
+			MP_REACH_NLRI (AFI=IPv4, SAFI=TBD-MF)
+			Next Hop: 0.0.0.0  (present, ignored)
+			NLRI:
+				Metadata Filter NLRI:
+				Length: 9
+				Flags: ET=1 (RT), Reserved=0
+				Entity: RT 64512:100
+        </sourcecode>
+
+     </section>
+
+    <section anchor="rtc" title="Relationship to RTC (RFC 4684)">
+     <t>
+        RTC (<xref target="RFC4684"/>) constrains which routes are sent to a peer based on RT interest. The MF SAFI mirrors
+        this architectural pattern but constrains which <spanx style="emph">service-metadata attributes</spanx> are attached
+        to routes that are sent. The two are complementary and can be deployed together: RTC limits route flooding; MF limits
+        metadata propagation.
+      </t>
+      <t>
+        <spanx style="emph">Optional optimization:</spanx> If RTC is in use, an RR <bcp14>MAY</bcp14> apply MF decisions only
+        to routes for RTs to which the peer is subscribed via RTC.
+      </t>
+    </section>
+
+	<section anchor="ops" title="Manageability and Operational Guidance ">
+  <t>
+    In this specification, Route Targets (RTs) are used to delineate <spanx style="emph">service classes</spanx>,
+    not merely customer membership. Each customer (or VPN) can have multiple RTs: one or more <spanx style="emph">base VPN RTs</spanx>
+    for reachability/RTC, plus <spanx style="emph">service-class RTs</spanx> that identify routes carrying particular
+    service characteristics (e.g., Ultra Low Latency, High-Throughput, Best-Effort). MF then keys on the
+    service-class RT to control delivery of service metadata.
+  </t>
+
+  <section anchor="ops-plan" title="Service-Class RT Plan">
+    <t>
+      Operators <bcp14>SHOULD</bcp14> define a small, stable set of service-class RTs (e.g., <spanx style="emph">RT-ULL</spanx>,
+      <spanx style="emph">RT-HT</spanx>, <spanx style="emph">RT-BE</spanx>) per customer or per administrative domain. Data-center/edge
+      nodes <bcp14>SHOULD</bcp14> tag ULL routes with both:
+    </t>
+    <t>
+      <list style="symbols">
+        <t>a <spanx style="emph">base VPN RT</spanx> (for normal reachability and RTC), and</t>
+        <t>the <spanx style="emph">service-class RT</spanx> (e.g., RT-ULL) that denotes the class whose routes may carry service metadata.</t>
+      </list>
+    </t>
+    <t>
+      Ingress nodes that <spanx style="emph">use</spanx> ULL metadata simply do not install MF for RT-ULL and therefore receive
+      the service metadata on those routes. Ingress nodes that <spanx style="emph">do not use</spanx> ULL metadata install
+      <spanx style="emph">MF[RT-ULL]</spanx> so their RR omits the metadata while leaving reachability unchanged.
+    </t>
+    <t>
+      <spanx style="emph">Example (illustrative):</spanx> A DC exporter advertises <spanx style="emph">10.0.0.0/24</spanx> with
+      <spanx style="emph">RT-VPN=64512:100</spanx> and <spanx style="emph">RT-ULL=64512:200</spanx>, attaching the Metadata Path
+      Attribute. The RR advertises the route <spanx style="emph">with</spanx> metadata to peers that do not have MF[64512:200] and
+      advertises the same route <spanx style="emph">without</spanx> metadata to peers that do.
+    </t>
+  </section>
+
+  <section anchor="ops-rtc" title="Interplay with RTC and Import/Export Policy">
+    <t>
+      Route Target Constraints (RTC) <bcp14>SHOULD</bcp14> remain keyed to the base VPN RT(s) so that reachability distribution
+      is unaffected by MF usage. The service-class RT is used primarily for MF matching; operators <bcp14>MAY</bcp14> also
+      use it in import/export policy if they intentionally wish to restrict which sites receive the <spanx style="emph">routes</spanx>
+      themselves, but that is orthogonal to MF (which governs only the <spanx style="emph">metadata</spanx> attached to routes).
+    </t>
+  </section>
+
+  <section anchor="ops-migration" title="Migration and Staging">
+    <t>
+      A pragmatic introduction plan is:
+    </t>
+    <t>
+      <list style="numbers">
+        <t><spanx style="emph">Define service-class RTs</spanx> (e.g., RT-ULL) and add them to exporter policy alongside the existing base VPN RTs.</t>
+        <t><spanx style="emph">Enable MF on RRs</spanx> with conservative limits; verify that peers without MF receive metadata unchanged.</t>
+        <t><spanx style="emph">Opt-out ingress nodes</spanx> that do not use ULL metadata by installing MF[RT-ULL]; validate that reachability persists and metadata is omitted.</t>
+        <t><spanx style="emph">Broaden coverage</spanx> to additional service classes only as needed; keep the service-class RT set small and well documented.</t>
+      </list>
+    </t>
+  </section>
+
+  <section anchor="ops-scale" title="Scale Hygiene and Naming">
+    <t>
+      To avoid RT proliferation, operators <bcp14>SHOULD</bcp14> keep the number of service-class RTs per customer low and
+      <bcp14>SHOULD</bcp14> document a clear mapping from service identifiers (e.g., slice, DNN, or service grade) to
+      service-class RTs. A structured numbering/naming scheme (e.g., <spanx style="emph">ASN:class-code</spanx>) helps prevent
+      drift and simplifies troubleshooting across DC exporters and RRs.
+    </t>
+  </section>
+
+  <section anchor="ops-telemetry" title="Operational Telemetry (Recommended)">
+    <t>
+      While MF focuses on RT assignment and filtering, implementations <bcp14>SHOULD</bcp14> expose minimal telemetry for validation:
+      count of MF entries per peer, advertisements with metadata omitted, and last-change timestamps. Basic rate-limit and batching
+      controls <bcp14>SHOULD</bcp14> be available to smooth MF-driven re-advertisements at the RR.
+    </t>
+  </section>
+</section>
+
+
+    <section anchor="iana" title="IANA Considerations">
+     <t>
+        IANA is requested to allocate a new SAFI from the "SAFI Values" registry:
+      </t>
+      <sourcecode type="text">
+		Name:      Metadata-Filter (MF)
+		Reference: This document
+      </sourcecode>
+
+    </section>
+
+    <section anchor="security" title="Security Considerations">
+      <t>
+        Metadata Filter reveals preference intent by peers. Deploy primarily in iBGP, and restrict which peers may advertise Metadata Filter entries.
+        Omission of metadata does not affect reachability but can affect path-selection at the receiver; operators should audit
+        Metadata Filter policy, enable change logging/dampening, and apply session protections (e.g., GTSM, TCP-AO) where appropriate.
+      </t>
+    </section>
+
+	
+  </middle>
+
+  <back>
+    <references title="Normative References">
+     
+      <?rfc include="reference.RFC.2119"?>
+	  <?rfc include="reference.RFC.4271"?>
+	  <?rfc include="reference.RFC.4360"?>
+	  <?rfc include="reference.RFC.4760"?>
+	  <?rfc include="reference.RFC.4786"?>
+	  <?rfc include="reference.RFC.7313"?>
+	  <?rfc include="reference.RFC.7606"?>
+	  <?rfc include="reference.RFC.8126"?>
+      <?rfc include="reference.RFC.8174"?>
+      <?rfc include="reference.RFC.8277"?>
+      <?rfc include="reference.RFC.9012"?>
+    </references>
+
+    <references title="Informative References">
+	
+	<reference anchor="IANA-BGP-PARAMS">
+       <front>
+			<title>BGP Path Attributes</title>
+		<author>
+		 <organization abbrev="IANA">
+		 Internet Assigned Numbers Authority
+		 </organization>
+		 </author>
+       </front>
+		<seriesInfo name="BGP Path Attributes" value="https://www.iana.org/assignments/bgp-parameters/"/>
+      </reference>
+	  
+      <?rfc include="reference.RFC.2042"?>
+	  <?rfc include="reference.RFC.4684"?>
+	  <?rfc include="reference.RFC.8799"?>
+
+	  
+   	 <reference anchor="TS23.501">
+       <front>
+			<title>3rd Generation Partnership Project</title>
+		<author>
+		 <organization abbrev="3GPP">
+		 3rd Generation Partnership Project
+		 </organization>
+		 </author>
+       </front>
+		<seriesInfo name="3GPP TS 23.501" value="Technical Specification Group Services and System Aspects; System architecture for the 5G System (5GS)"/>
+      </reference>  
+	 
+	 <reference anchor="CATS-Metrics" target="https://datatracker.ietf.org/doc/draft-ietf-cats-metric-definition/">
+	 <front>
+	    <title> CATS Metrics Definition</title>
+		<author>
+		 <organization>Y. Kehan, et, al</organization>
+		</author>
+		<date month="July" year="2025"/>
+     </front>
+	 </reference>
+
+	 <reference anchor="5g-edge-service-metadata" target="https://datatracker.ietf.org/doc/draft-ietf-idr-5g-edge-service-metadata/">
+	 <front>
+	    <title>5G Edge Service Metadata</title>
+		<author>
+		 <organization>L. Dunbar, K. Majumdar, C. Li, G. Mishra, Z. Du</organization>
+		</author>
+		<date month="Sept" year="2025"/>
+     </front>
+	 </reference>
+	
+    </references>
+
+
+  </back>
+</rfc>
