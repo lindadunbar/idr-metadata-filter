@@ -1,0 +1,551 @@
+
+<?Pub Inc?>
+<?rfc toc="yes"?>
+<?rfc tocompact="yes"?>
+<?rfc tocdepth="3"?>
+<?rfc tocindent="yes"?>
+<?rfc symrefs="yes"?>
+<?rfc sortrefs="yes"?>
+<?rfc comments="yes"?>
+<?rfc inline="yes"?>
+<?rfc compact="yes"?>
+<?rfc subcompact="no"?>
+<rfc category="std" docName="draft-dunbar-idr-metadata-subscription-control-00"
+     ipr="trust200902" xmlns:xi="http://www.w3.org/2001/XInclude" submissionType="IETF" consensus="true">
+  <front>
+
+
+    <title abbrev="Metadata Constrained Dist">
+	Metadata Constrained Distribution 
+	</title>
+
+    <author fullname="Linda Dunbar" initials="L. " surname="Dunbar">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <city>Dallas, TX</city>
+          <country>USA</country>
+		</postal>
+        <email>ldunbar@futurewei.com</email>
+      </address>
+    </author>
+
+        <author fullname="Alvaro Retana" initials="A. " surname="Retana">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>aretana@futurewei.com</email>
+      </address>
+    </author>
+	
+     <author fullname="Keyur Patel" initials="K. " surname="Patel">
+      <organization>Arrcus</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>keyur@arrcus.com</email>
+      </address>
+    </author>
+	
+	 <author fullname="Kausik Majumdar" initials="K. " surname="Majumdar">
+      <organization>Oracle</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>kausik.majumdar@oracle.com</email>
+      </address>
+    </author>
+	
+	
+    <date year="2025"/>
+
+    <abstract>
+     <t>This document specifies a receiver-driven <em>Metadata Subscription</em> (MDS) mechanism for BGP. An ingress router uses a new MDS NLRI to subscribe to specific service metadata types, optionally scoped to Route Targets (RTs). Route Reflectors (RRs) then attach only the requested metadata sub-types to outbound UPDATEs for that peer and MUST strip metadata for peers that did not subscribe. The approach minimizes unnecessary control-plane load while enabling compute-/service-aware traffic steering.
+	</t>
+    </abstract>
+
+  </front>
+
+  <middle>
+    <section title="Introduction">
+   <t>
+    Service metadata can be attached to BGP UPDATEs to enable path selection
+    not only based on traditional routing cost but also on the running
+    conditions of edge-hosted services (e.g., processing latency, load, or
+    resource availability), as described in
+    <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.
+    These attributes may vary per service and change rapidly; distributing all
+    such metadata to all ingress nodes can be overwhelming especially when some devices have
+    limited processing capability, or when not all routes require consideration of both network cost and edge-environment cost to determine the optimal path.
+  </t> 
+     
+	<t>In common iBGP topologies with Route Reflectors (RRs), advertising edge nodes attach service metadata to UPDATEs without knowing which ingress nodes will consume it. To enable selective delivery, this document specifies a <em>Metadata Subscription (MDS)</em> mechanism by which an ingress node explicitly signals, via a new MDS NLRI, the metadata types, and optionally the set of Route Targets (RTs), it wishes to receive. RRs (and other propagating speakers) remove metadata when reflecting an UPDATE to a peer that has not subscribed. When the receiving peer has an active subscription, the Metadata Path Attribute is propagated accordingly. Peers without a subscription do not receive metadata, while reachability and best-path selection remain unchanged.
+    </t>
+
+  <t>
+    Unlike static filtering, MDS is dynamic: subscriptions can be installed,
+    refined, and withdrawn as service placement or consumption needs evolve.
+    This subscription-driven model limits control-plane churn and processing
+    overhead while preserving normal BGP reachability semantics and enabling
+    scalable use of service metadata in large deployments.
+  </t>
+
+   </section>
+
+   <section title="Conventions used in this document">
+     <t>
+      The reader is expected to be familiar with the terminology defined 
+      in <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.
+     </t>
+    <t>
+    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL",
+    "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT
+    RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+    interpreted as described in BCP 14 <xref target="RFC2119"/>
+    <xref target="RFC8174"/> when, and only when, they appear in
+    all capitals, as shown here.
+    </t>
+   </section>
+
+<section title="Summary of Operation">
+  <t>
+    An ingress node that wishes to receive service metadata for routes
+    tagged with particular Route Targets (RTs) signals its interest by
+    advertising one or more MDS NLRI (AFI=IPv4/IPv6, SAFI=TBD-MDS)
+    that identify the relevant RTs. Nodes that do not advertise MDS NLRI
+    are treated as having no subscription and therefore do not receive
+    metadata.
+  </t>
+
+  <t> RRs simply remove metadata when reflecting
+    an UPDATE to a peer that has not subscribed to the RT associated
+    with that UPDATE. If the peer has subscribed, the metadata is
+    propagated unchanged. Route reachability and other BGP attributes
+    remain unaffected.
+  </t>
+
+  <t>
+    MDS state persists until the corresponding MDS NLRI is withdrawn or
+    until the BGP session resets, unless persistent policy is configured.
+    This subscription-based model allows ingress nodes to dynamically
+    adjust which RT-scoped metadata they receive as service placement
+    and consumption evolve.
+  </t>
+
+  <t>
+    Support for Enhanced Route Refresh <xref target="RFC7313"/>
+    is <bcp14>RECOMMENDED</bcp14> to facilitate on-demand
+    resynchronization when subscription state changes.
+  </t>
+</section>
+
+   
+
+<section title="Capability Negotiation">
+  <t>
+    A BGP speaker that supports Metadata Subscription (MDS) and is able to
+    receive and process MDS NLRI MUST advertise the corresponding
+    (AFI, SAFI) pair (AFI = IPv4 or IPv6, SAFI = TBD-MDS) using the
+    Multiprotocol Extensions Capability <xref target="RFC4760"/>.
+    A speaker MUST NOT send MDS NLRI to a peer unless this capability
+    has been successfully negotiated.
+  </t>
+</section>
+
+	
+<section title="Metadata Subscription (MDS) NLRI Wire Format">
+  <t>
+    The Metadata Subscription (MDS) NLRI is carried using
+    MP_REACH_NLRI and MP_UNREACH_NLRI as defined in
+    <xref target="RFC4760"/>. The Nexthop address MUST be of zero length.
+    The MDS NLRI identifies a set of Route Targets (RTs) for which the
+    advertising BGP speaker wishes to receive service metadata.
+  </t>
+
+  <t>
+    A BGP speaker expresses interest only in RT-scoped metadata.
+    When the MDS NLRI is present for a given RT, UPDATEs whose VPN
+    membership includes that RT MUST retain the Metadata Path
+    Attribute when advertised toward the subscriber. If no MDS NLRI
+    exists for the RT, Metadata Path Attributes MUST be removed before
+    propagation. Route reachability and other BGP attributes are
+    propagated unchanged.
+  </t>
+
+  <t>
+    Multiple MDS NLRIs MAY be advertised. Their effects are additive:
+    if an RT is listed in any active MDS NLRI, the peer is considered
+    subscribed for that RT. Withdrawal of an MDS NLRI removes only the
+    corresponding RT entries.
+  </t>
+
+  <t>
+    The wire format of the MDS NLRI is shown below.
+  </t>
+
+  <figure>
+    <artwork><![CDATA[
+    +----------------+
+    |  RT-Count (1)  |
+    +----------------+---------------------------+
+    |          RT[1] (12 bytes)                  |
+    +----------------+---------------------------+
+    |                     ...                    |
+    +----------------+---------------------------+
+    |          RT[N] (12 bytes)                  |
+    +--------------------------------------------+
+    ]]></artwork>
+  </figure>
+
+  <t>
+    RT-Count (1 octet):  
+    Indicates the number of Route Target entries. RT-Count MUST be ≥ 1.
+  </t>
+
+  <t>
+    RT[i] (12 octets):  
+    Each Route Target entry is encoded identically to the Route Target
+    membership NLRI defined in <xref target="RFC4684"/>:
+    a 4-octet Origin AS followed by an 8-octet RT value.
+    Reuse of this format enables straightforward matching against
+    VPN import RTs. :contentReference[oaicite:1]{index=1}
+  </t>
+
+  <t>
+    The MDS NLRI does not include any metadata-type selectors.
+    All metadata carried in UPDATEs associated with the subscribed
+    RTs is considered eligible for propagation to the subscriber.
+    Future revisions MAY define metadata-type granularity.
+  </t>
+
+  <t>
+    A BGP speaker MUST treat malformed MDS NLRI as withdraw,
+    consistent with <xref target="RFC7606"/>.
+  </t>
+</section>
+
+	
+<section anchor="errors" title="Error Handling">
+  <t>
+    Malformed MDS NLRI <bcp14>MUST</bcp14> be treated-as-withdraw, as specified
+    in <xref target="RFC7606"/>. The BGP session <bcp14>MUST NOT</bcp14> be reset
+    as a result of a malformed MDS NLRI. If errors persist, an implementation
+    <bcp14>MAY</bcp14> use the AFI/SAFI disable procedure described in
+    <xref target="RFC7606"/>.
+  </t>
+</section>
+
+
+	
+<section anchor="examples" title="Example">
+
+  <t>
+    A peer signals “subscribe to metadata for RT = 64512:100” by advertising
+    an MDS NLRI listing that RT. The receiving peer (e.g., RR) will propagate
+    service metadata for routes carrying RT=64512:100 toward this subscriber.
+    Routes carrying this RT sent to non-subscribed peers will have metadata
+    removed, while reachability is still propagated.
+  </t>
+
+  <sourcecode type="text">
+  ; Peer subscribes to metadata for RT 64512:100
+
+  UPDATE
+    Path Attributes:
+      ORIGIN: IGP
+      AS_PATH: (iBGP)
+      MP_REACH_NLRI (AFI=IPv4, SAFI=TBD-MDS)
+      NLRI:
+        MDS NLRI:
+          RT-Count: 1
+          RT[1]: 64512:100
+  </sourcecode>
+
+</section>
+
+
+<section anchor="rtc" title="Relationship to RTC (RFC 4684)">
+  <t>
+    RTC <xref target="RFC4684"/> constrains which routes are propagated to a
+    peer based on the RTs that the peer has expressed interest in. Metadata
+    Subscription (MDS) applies a complementary control: it determines whether
+    service metadata is included when those routes are advertised. Thus, RTC
+    governs propagation of reachability information, while MDS governs
+    propagation of associated service metadata. Both mechanisms may be
+    deployed together — RTC limits route flooding, and MDS limits metadata
+    propagation — without modifying BGP best-path selection or reachability
+    semantics.
+  </t>
+</section>
+
+
+<section anchor="ops" title="Manageability and Operational Guidance">
+
+  <t>
+    In this specification, Route Targets (RTs) are used to delineate
+    <spanx style="emph">service classes</spanx>, not merely VPN membership.
+    A group of routes may carry multiple RTs to identify VPN or customer
+    groupings, indicate reachability or constrain membership, or signal
+    that routes may carry associated service metadata. Metadata Subscription
+    (MDS) then keys on the service-class RTs to control whether metadata is
+    delivered to a given peer. Nodes that do not subscribe to a service-class
+    RT receive reachability normally but not the corresponding metadata.
+  </t>
+
+  <section anchor="ops-plan" title="Service-Class RT Plan">
+    <t>
+      Operators <bcp14>SHOULD</bcp14> define a small, stable set of service
+      classes per customer, application, or administrative domain. Exported
+      routes may be tagged with both:
+    </t>
+    <t>
+      <list style="symbols">
+        <t>a <spanx style="emph">base RT</spanx> (for normal reachability and membership), and</t>
+        <t>a <spanx style="emph">service-class RT</spanx> that indicates the class whose routes may carry service metadata.</t>
+      </list>
+    </t>
+    <t>
+      Nodes that <spanx style="emph">use</spanx> metadata subscribe to the
+      appropriate service-class RT(s) via MDS NLRI so that service metadata is
+      propagated. Nodes that <spanx style="emph">do not use</spanx> metadata
+      simply do not subscribe; they still receive reachability for the routes
+      but without service metadata attached.
+    </t>
+    <t>
+      <spanx style="emph">Example (illustrative):</spanx>
+      A DC edge node advertises <spanx style="emph">10.0.0.0/24</spanx> with
+      <spanx style="emph">RT-VPN=64512:100</spanx> and
+      <spanx style="emph">RT-ULL=64512:200</spanx>, attaching service metadata.
+      An RR advertises the route <spanx style="emph">with</spanx> metadata to
+      peers that have subscribed (via MDS NLRI) to <spanx style="emph">RT-ULL
+      (64512:200)</spanx>, and advertises the same route <spanx style="emph">
+      without</spanx> metadata to peers that have not subscribed. Reachability
+      remains unchanged.
+    </t>
+  </section>
+
+  <section anchor="ops-rtc" title="Interplay with RTC and Import/Export Policy">
+    <t>
+      If multiple RTs are used (as above), RTC <bcp14>SHOULD</bcp14> remain keyed
+      to the base RT(s) so that reachability distribution is unaffected by MDS
+      usage. The service-class RT is used for MDS subscription matching only.
+      RTC controls <spanx style="emph">which routes</spanx> are propagated;
+      MDS controls <spanx style="emph">whether metadata</spanx> is propagated
+      along with those routes.
+    </t>
+  </section>
+
+  <section anchor="ops-migration" title="Migration and Staging">
+    <t>
+      A pragmatic introduction plan is:
+    </t>
+    <t>
+      <list style="numbers">
+        <t><spanx style="emph">Define service-class RTs</spanx> and add them to exporter
+            policy alongside existing RTs.</t>
+        <t><spanx style="emph">Enable MDS on RRs</spanx>; verify that subscribed peers
+            receive metadata unchanged.</t>
+        <t><spanx style="emph">For ingress nodes that do not use metadata</spanx>,
+            simply omit MDS subscription; validate that reachability persists
+            and metadata is not delivered.</t>
+        <t><spanx style="emph">Broaden coverage</spanx> to additional service
+            classes only as needed; keep the service-class RT set small and
+            well documented.</t>
+      </list>
+    </t>
+  </section>
+
+  <section anchor="ops-telemetry" title="Operational Telemetry (Recommended)">
+    <t>
+      Although MDS focuses on RT-based subscription of metadata, implementations
+      should expose minimal telemetry for validation and troubleshooting. Useful
+      telemetry includes: the number of active MDS entries per peer, the count
+      of UPDATEs where metadata was propagated or omitted due to subscription
+      state, and timestamps of last subscription change. Visibility into these
+      counters can help operators verify proper behavior at scale.
+    </t>
+  </section>
+
+</section>
+
+
+
+<section anchor="iana" title="IANA Considerations">
+  <t>
+    IANA is requested to allocate a new SAFI from the “SAFI Values” registry
+    to identify the Metadata Subscription (MDS) NLRI:
+  </t>
+
+  <sourcecode type="text">
+    Name:      Metadata-Subscription (MDS)
+    Reference: This document
+  </sourcecode>
+
+  <t>
+    No other IANA actions are requested by this document.
+  </t>
+</section>
+
+
+<section anchor="security" title="Security Considerations">
+
+  <t>
+    This document introduces no new security vulnerabilities beyond those
+    discussed in <xref target="RFC4684"/> and
+    <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.  Normal BGP
+    authentication, integrity protection, and transport security mechanisms
+    (e.g., TCP-AO, MD5, or TLS) remain applicable.
+  </t>
+
+  <t>
+    Metadata Subscription (MDS) may reveal that a node is interested in
+    service metadata for particular Route Targets (RTs), which could disclose
+    policy intent or service-usage characteristics.  To limit exposure,
+    deployments SHOULD primarily use MDS within iBGP, and the set of peers
+    permitted to advertise or receive MDS NLRI SHOULD be controlled.  Export
+    to external BGP peers is NOT RECOMMENDED.
+  </t>
+
+  <t>
+    MDS affects only whether metadata is propagated; route reachability is
+    preserved regardless of subscription state.  However, receiving metadata
+    may influence path or service-instance selection at the ingress node.
+    Operators therefore SHOULD audit subscription policy, and are encouraged
+    to enable change logging to track subscription additions and withdrawals.
+  </t>
+
+  <t>
+    Ignoring MDS NLRI may result in receiving service metadata that the node
+    does not intend to process, possibly consuming unnecessary memory or
+    control-plane resources.  Conversely, misconfiguration that prevents a
+    node from receiving metadata it expects could affect its service-selection
+    decisions.  Operators SHOULD monitor subscription state and associated
+    telemetry.
+  </t>
+
+</section>
+
+
+	
+  </middle>
+
+  <back>
+    <references title="Normative References">
+     
+     <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-5g-edge-service-metadata.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.2119.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4684.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4760.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.7313.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.7606.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8174.xml"/>
+    </references>
+<section anchor="appendix-5g-usage" title="Using Metadata-Filter in 5G Environments">
+  <t>
+    In 5G deployments, multiple User Plane Functions (UPFs) or edge gateways anchor PDU sessions near users while
+    distributed edge data centers host application workloads. BGP advertises reachability for these workloads,
+    and may carry service metadata so ingress nodes can consider service conditions in addition to routing metrics
+    when selecting paths.
+  </t>
+
+  <t>
+    Service metadata can churn rapidly and inflate UPDATEs if flooded to all peers. Many ingress nodes (e.g., UPFs
+    handling best-effort traffic) neither need nor can efficiently process such rapidly changing attributes.
+    The Metadata-Filter (MDF) SAFI allows a receiver to signal its <em>lack of interest</em> in metadata associated
+    with specific Route Targets (RTs). Upon receiving an MDF NLRI, a Route Reflector (RR) omits the matching
+    metadata for that peer while preserving reachability.
+  </t>
+
+  <t>
+    MDF signaling is dynamic: ingress nodes can add or withdraw MDF entries as service placement evolves, allowing
+    networks to adapt metadata delivery without impacting route availability.
+  </t>
+
+  <figure anchor="fig-5g-mdf" title="Illustrative 5G Topology with MDF-Scoped Metadata Delivery">
+    <artwork><![CDATA[
+                 +------------------ Cloud / Core -----------------+
+                 |                                                 |
+                 |        +--------+           +--------+          |
+   Apps/Services |        |  DC-A  |           |  DC-B  |          |
+ (exports routes)|        | (RR/PE)|           | (RR/PE)|          |
+   with RTs ---> |        +---+----+           +---+----+          |
+                 |            |                    |               |
+                 +------------|--------------------|--------------+
+                              |                    |
+                          +---+----+            +--+---+
+                          |  RR    |            |  RR  |
+                          +---+----+            +--+---+
+                              |                    |
+            MDF[RT=ULL] ----> |                    |
+                              |                    |
+                         +----+----+            +--+----+
+                         |  UPF-1  |            | UPF-2 |
+                         +---------+            +-------+
+
+   - DC-A/DC-B advertise routes tagged with a base RT (VPN/customer) and a service-class RT (e.g., RT=ULL).
+   - UPF-1 sends MDF NLRI for RT=ULL: RR omits metadata on routes with RT=ULL when advertising to UPF-1.
+   - UPF-2 does not send MDF: it receives routes with metadata unchanged.
+    ]]></artwork>
+  </figure>
+
+  <section anchor="appendix-5g-service-classing" title="Service-Class RTs and MDF">
+    <t>
+      Operators define a small, stable set of <em>service-class RTs</em> to delineate which groups of routes may carry
+      service metadata (e.g., ultra-low-latency vs. best-effort). Exporters tag routes with both a base RT (for
+      reachability/membership) and a service-class RT. MDF then keys on the service-class RT to control metadata
+      delivery, while RTC (RFC 4684) and normal import/export policy remain keyed to the base RT so reachability is
+      unaffected.
+    </t>
+  </section>
+
+  <section anchor="appendix-5g-procedure" title="Operational Procedure (Example)">
+  <ol spacing="compact">
+    <li><spanx style="strong">Define service classes:</spanx> Choose a minimal set of RTs representing classes that may carry metadata (e.g., RT-ULL, RT-VID, RT-ML). Document ownership and intended use.</li>
+    <li><spanx style="strong">Tag exports:</spanx> Data center exporters attach a base RT (VPN/customer) and a service-class RT to the same NLRI when metadata may accompany the route.</li>
+    <li><spanx style="strong">Enable MDF on RRs:</spanx> RRs support the MDF SAFI and omit metadata per-peer when an MDF NLRI matches the service-class RT.</li>
+    <li><spanx style="strong">Ingress selection:</spanx> UPFs/ingress nodes that do not use metadata advertise MDF NLRIs for the relevant service-class RTs; nodes that need metadata do not send MDF.</li>
+    <li><spanx style="strong">Adjust dynamically:</spanx> As UE placement or service location changes, ingress nodes add/withdraw MDF entries to tune metadata reception over time.</li>
+    <li><spanx style="strong">Telemetry (recommended):</spanx> Expose per-peer MDF entry counts, “metadata omitted” counters, and last-change timestamps to validate behavior.</li>
+  </ol>
+</section>
+
+
+<section anchor="appendix-5g-benefits" title="Benefits in 5G">
+  <ul spacing="compact">
+    <li>
+      <spanx style="strong">Control-plane scale:</spanx> Limits fast-changing metadata propagation to UPFs
+      and routers directly attached to UPFs, reducing UPDATE size and processing load on Route Reflectors
+      and Provider Edge routers while preserving full reachability.
+    </li>
+    <li>
+      <spanx style="strong">Service agility:</spanx> Supports dynamic changes in metadata subscription as new
+      UEs (for example, drones or autonomous vehicles) roam into or away from UPFs. When a UE moves to a new
+      UPF, that UPF can dynamically express interest in receiving metadata needed for optimal path selection;
+      when the UE leaves, the UPF withdraws its interest, preventing unnecessary metadata distribution.
+    </li>
+    <li>
+      <spanx style="strong">Operational safety:</spanx> Receiver-driven and RT-scoped; enables incremental rollout
+      without impacting route propagation for other peers or service classes.
+    </li>
+  </ul>
+</section>
+
+  <section anchor="appendix-5g-interop" title="Interoperability Notes">
+    <t>
+      MDF complements RTC: RTC constrains <em>route</em> flooding; MDF constrains <em>metadata</em> attachment to those
+      routes for specific peers :contentReference[oaicite:7]{index=7}. MDF is carried in
+      MP\_REACH/MP\_UNREACH with AFI=IPv4|IPv6 and a dedicated SAFI; the Next Hop length is 0 for MDF NLRIs.
+    </t>
+  </section>
+</section>
+
+  </back>
+</rfc>
