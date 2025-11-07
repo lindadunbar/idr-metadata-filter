@@ -1,0 +1,396 @@
+
+<?Pub Inc?>
+<?rfc toc="yes"?>
+<?rfc tocompact="yes"?>
+<?rfc tocdepth="3"?>
+<?rfc tocindent="yes"?>
+<?rfc symrefs="yes"?>
+<?rfc sortrefs="yes"?>
+<?rfc comments="yes"?>
+<?rfc inline="yes"?>
+<?rfc compact="yes"?>
+<?rfc subcompact="no"?>
+<rfc category="std" docName="draft-dunbar-idr-metadata-constrained-dist-01"
+     ipr="trust200902" xmlns:xi="http://www.w3.org/2001/XInclude" submissionType="IETF" consensus="true">
+  <front>
+
+
+    <title abbrev="Metadata Constrained Dist">
+	Metadata Constrained Distribution 
+	</title>
+
+    <author fullname="Linda Dunbar" initials="L. " surname="Dunbar">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <city>Dallas, TX</city>
+          <country>USA</country>
+		</postal>
+        <email>ldunbar@futurewei.com</email>
+      </address>
+    </author>
+
+        <author fullname="Alvaro Retana" initials="A. " surname="Retana">
+      <organization>Futurewei</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>aretana@futurewei.com</email>
+      </address>
+    </author>
+	
+     <author fullname="Keyur Patel" initials="K. " surname="Patel">
+      <organization>Arrcus</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>keyur@arrcus.com</email>
+      </address>
+    </author>
+	
+	 <author fullname="Kausik Majumdar" initials="K. " surname="Majumdar">
+      <organization>Oracle</organization>
+
+      <address>
+		<postal>
+          <country>USA</country>
+		</postal>
+        <email>kausik.majumdar@oracle.com</email>
+      </address>
+    </author>
+	
+	
+    <date year="2025"/>
+
+    <abstract>
+      <t>This document defines the Metadata-Filter (MDF) Subsequent Address Family Identifier (SAFI). A BGP speaker uses MDF to signal its lack of interest in receiving service metadata attributes on routes that carry specified Route Targets (RTs), while leaving reachability unchanged.
+		</t>
+    </abstract>
+
+  </front>
+
+  <middle>
+    <section title="Introduction">
+    <t>
+     Service Metadata can be added to BGP UPDATEs to make path selections 
+     not only based on the routing cost but also the running environment 
+     of the edge services <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.
+     These attributes can proliferate per service and churn rapidly. 
+     Ingress nodes may have constrained control-plane
+     resources, and may not need nor be able to efficiently process large, 
+     fast-changing metadata on every route.
+    </t> 
+     
+	  <t>In typical iBGP topologies with Route Reflectors, edge nodes can advertise routes with service metadata without direct knowledge of which ingress nodes will receive and use information. Receivers therefore need a way to decline metadata for uninterested classes while continuing to receive reachability. The Metadata-Filter (MDF) SAFI provides a mechanism for a receiver to signal its lack of interest in service metadata for routes that carry specified Route Targets (RTs).  In turn, the RR removes the specific attributes from the affected UPDATEs and continues to process the message accordingly.
+    </t>
+
+	  <t>The signaling of a node's interest (or lack thereof) in metadata is dynamic. MDF allows ingress nodes adjust metadata delivery as service placement changes, while keeping reachability intact.</t>
+
+   </section>
+
+   <section title="Conventions used in this document">
+     <t>
+      The reader is expected to be familiar with the terminology defined 
+      in <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.
+     </t>
+    <t>
+    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL",
+    "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT
+    RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+    interpreted as described in BCP 14 <xref target="RFC2119"/>
+    <xref target="RFC8174"/> when, and only when, they appear in
+    all capitals, as shown here.
+    </t>
+   </section>
+
+	<section title ="Summary of Operation">
+		<t>
+     A node that doesn't need to receive service metadata for routes 
+     tagged with a given Route Target (RT) signals its peer by advertising 
+     an MDF NLRI (AFI=IPv4/IPv6, SAFI=TBD-MDF) that encodes the specific RT.
+     Upon receiving this MDF NLRI, the receiver removes the service metadata 
+     attributes from any UPDATE that carries the RT when advertising to that 
+     peer, while leaving reachability and other attributes unchanged. The 
+     MDF state persists until the sender withdraws the MDF NLRI or the BGP 
+     session resets.
+    </t>
+    <t>
+    Support for Enhanced Route Refresh <xref target="RFC7313"/> is <bcp14>RECOMMENDED</bcp14> to
+    facilitate on-demand resynchronization.
+    </t>
+  </section>    
+
+	<section title = "Capability Negotiation">
+  <t>
+   A BGP speaker that is able to receive the MDF NLRI MUST use the Multiprotocol 
+   Extensions Capability Code <xref target="RFC4760"/> to advertise the 
+   corresponding (AFI, SAFI) pair (AFI=1|2, SAFI=TBD-MF).
+  </t>
+	</section>
+	
+	<section title = "Metadata Filter NLRI Wire Format">
+	<t>The MDF NLRI is encoded in MP_REACH_NLRI and MP_UNREACH_NLRI attributes <xref target="RFC4760"/> with (AFI=IPv4|IPv6, SAFI=TBD-MDF).
+   The Length of Next Hop Network Address MUST be set to 0.
+   The MDF NLRI is formatted as follows:
+  </t>
+      <t>
+        <list style="hanging">
+          <t hangText="Length (1 octet):">Number of octets that follow.</t>
+          <t hangText="Flags (1 octet):">
+            <list style="symbols">
+              <t>Reserved: MUST be transmitted as 0 and ignored when received.</t>
+            </list>
+          </t>
+          <t hangText="Entity (12 octets):">
+            Route Target value, identical to the prefix structure of the Route Target membership NLRI <xref target="RFC4684"/>:
+            origin as (4) | route target (8).
+          </t>
+        </list>
+      </t>
+	</section>
+	
+      <section anchor="errors" title="Error Handling">
+        <t>
+          Malformed MDF NLRI <bcp14>MUST</bcp14> be treated-as-withdraw <xref target="RFC7606"/>. 
+          The session <bcp14>MUST NOT</bcp14>
+          be reset because of a malformed MDF NLRI.  If the errors are persistent, 
+          an implementation MAY use the AFI/SAFI disable approach <xref target="RFC7606"/>.
+        </t>
+      </section>
+
+	
+	   <section anchor="examples" title="Example">
+     
+        <t>
+          A peer signals "omit metadata for RT=64512:100". The receiving peer advertises routes carrying RT=64512:100 to this peer without service metadata.
+        </t>
+        <sourcecode type="text">
+    UPDATE
+      Path Attributes:
+        ORIGIN: IGP
+        AS_PATH: (iBGP)
+        MP_REACH_NLRI (AFI=IPv4, SAFI=TBD-MDF)
+        NLRI:
+          Metadata Filter NLRI:
+          Length: 13
+          Flags: 0
+          Entity: RT 64512:100
+        </sourcecode>
+
+     </section>
+
+    <section anchor="rtc" title="Relationship to RTC (RFC 4684)">
+     <t>
+        RTC <xref target="RFC4684"/> constrains which routes are sent to a peer based on RT interest. The MDF SAFI mirrors
+        this architectural pattern but constrains which <spanx style="emph">service metadata attributes</spanx> are attached
+        to routes that are sent. The two are complementary and can be deployed together: RTC limits route flooding and MDF limits
+        metadata propagation.
+      </t>
+    </section>
+
+	<section anchor="ops" title="Manageability and Operational Guidance ">
+  <t>
+    In this specification, Route Targets (RTs) can be used to delineate <spanx style="emph">service classes</spanx>,
+    not merely membership. Each group of routes can have multiple RTs to, for example, identify a VPN or customer grouping,
+    indicate reachability or constrain membership, or identify routes carrying particular
+    service characteristics. MDF then keys on the
+    service class to control delivery of service metadata.
+  </t>
+
+  <section anchor="ops-plan" title="Service-Class RT Plan">
+    <t>
+      Operators <bcp14>SHOULD</bcp14> define a small, stable set of service classes per customer, 
+      application, or administrative domain. Advertised routes may be tagged with both:
+    </t>
+    <t>
+      <list style="symbols">
+        <t>a <spanx style="emph">base RT</spanx> (for normal reachability and membership), and</t>
+        <t>the <spanx style="emph">service class</spanx> that denotes the class whose routes may carry service metadata.</t>
+      </list>
+    </t>
+    <t>
+      Nodes that <spanx style="emph">use</spanx> metadata simply do not install MDF and therefore receive
+      the service metadata on those routes. Nodes that <spanx style="emph">do not use</spanx> metadata install
+      <spanx style="emph">MDF</spanx> so the sender omits the metadata while leaving reachability unchanged.
+    </t>
+    <t>
+      <spanx style="emph">Example (illustrative):</spanx> A DC exporter advertises <spanx style="emph">10.0.0.0/24</spanx> with
+      <spanx style="emph">RT-VPN=64512:100</spanx> and <spanx style="emph">RT-ULL=64512:200</spanx>, attaching the Metadata Path
+      Attribute. The RR advertises the route <spanx style="emph">with</spanx> metadata to peers that do not have MDF[64512:200] and
+      advertises the same route <spanx style="emph">without</spanx> metadata to peers that do.
+    </t>
+  </section>
+
+  <section anchor="ops-rtc" title="Interplay with RTC and Import/Export Policy">
+    <t>
+      If multiple RTs are used (as above), RTC <bcp14>SHOULD</bcp14> remain keyed to the base RT(s) so that reachability distribution
+      is unaffected by MDF usage. The service class RT is used for MDF matching.
+    </t>
+  </section>
+
+  <section anchor="ops-migration" title="Migration and Staging">
+    <t>
+      A pragmatic introduction plan is:
+    </t>
+    <t>
+      <list style="numbers">
+        <t><spanx style="emph">Define service class RTs</spanx> and add them to exporter policy alongside the other existing RTs.</t>
+        <t><spanx style="emph">Enable MDF on RRs</spanx>; verify that peers receive metadata unchanged.</t>
+        <t><spanx style="emph">Opt-out ingress nodes</spanx> that do not use metadata by installing MDF; validate that reachability persists and metadata is omitted.</t>
+        <t><spanx style="emph">Broaden coverage</spanx> to additional service classes only as needed; keep the service-class RT set small and well documented.</t>
+      </list>
+    </t>
+  </section>
+
+  <section anchor="ops-telemetry" title="Operational Telemetry (Recommended)">
+    <t>
+      While MDF focuses on RT assignment and filtering of metadata, implementations should expose minimal telemetry for validation:
+      count of MDF entries per peer, advertisements with metadata omitted, and last-change timestamps. 
+    </t>
+  </section>
+</section>
+
+
+    <section anchor="iana" title="IANA Considerations">
+     <t>
+        IANA is requested to allocate a new SAFI from the "SAFI Values" registry:
+      </t>
+      <sourcecode type="text">
+      Name:      Metadata-Filter (MDF)
+      Reference: This document
+      </sourcecode>
+
+    </section>
+
+    <section anchor="security" title="Security Considerations">
+      <t>
+        This document introduces no new security vulnerabilities beyond those discussed in <xref target="RFC4684"/> and <xref target="I-D.ietf-idr-5g-edge-service-metadata"/>.
+      </t>
+      <t>
+        The Metadata Filter can reveal preference intent or limitations of specific nodes. To limit exposure, deployment should primarily occur in iBGP, and the peers that may advertise MDF entries should be limited.
+        Omission of metadata does not affect reachability but can affect path selection at the receiver; operators should audit
+        Metadata Filter policy and enable change logging.
+        Ignoring an MDF NLRI may result in processing unnecessary metadata and cause undue resource consumption.
+      </t>
+    </section>
+
+	
+  </middle>
+
+  <back>
+    <references title="Normative References">
+     
+     <xi:include href="https://bib.ietf.org/public/rfc/bibxml3/reference.I-D.ietf-idr-5g-edge-service-metadata.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.2119.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4684.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.4760.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.7313.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.7606.xml"/>
+     <xi:include href="https://www.rfc-editor.org/refs/bibxml/reference.RFC.8174.xml"/>
+    </references>
+<section anchor="appendix-5g-usage" title="Using Metadata-Filter in 5G Environments">
+  <t>
+    In 5G deployments, multiple User Plane Functions (UPFs) or edge gateways anchor PDU sessions near users while
+    distributed edge data centers host application workloads. BGP advertises reachability for these workloads,
+    and may carry service metadata so ingress nodes can consider service conditions in addition to routing metrics
+    when selecting paths.
+  </t>
+
+  <t>
+    Service metadata can churn rapidly and inflate UPDATEs if flooded to all peers. Many ingress nodes (e.g., UPFs
+    handling best-effort traffic) neither need nor can efficiently process such rapidly changing attributes.
+    The Metadata-Filter (MDF) SAFI allows a receiver to signal its <em>lack of interest</em> in metadata associated
+    with specific Route Targets (RTs). Upon receiving an MDF NLRI, a Route Reflector (RR) omits the matching
+    metadata for that peer while preserving reachability.
+  </t>
+
+  <t>
+    MDF signaling is dynamic: ingress nodes can add or withdraw MDF entries as service placement evolves, allowing
+    networks to adapt metadata delivery without impacting route availability.
+  </t>
+
+  <figure anchor="fig-5g-mdf" title="Illustrative 5G Topology with MDF-Scoped Metadata Delivery">
+    <artwork><![CDATA[
+                 +------------------ Cloud / Core -----------------+
+                 |                                                 |
+                 |        +--------+           +--------+          |
+   Apps/Services |        |  DC-A  |           |  DC-B  |          |
+ (exports routes)|        | (RR/PE)|           | (RR/PE)|          |
+   with RTs ---> |        +---+----+           +---+----+          |
+                 |            |                    |               |
+                 +------------|--------------------|--------------+
+                              |                    |
+                          +---+----+            +--+---+
+                          |  RR    |            |  RR  |
+                          +---+----+            +--+---+
+                              |                    |
+            MDF[RT=ULL] ----> |                    |
+                              |                    |
+                         +----+----+            +--+----+
+                         |  UPF-1  |            | UPF-2 |
+                         +---------+            +-------+
+
+   - DC-A/DC-B advertise routes tagged with a base RT (VPN/customer) and a service-class RT (e.g., RT=ULL).
+   - UPF-1 sends MDF NLRI for RT=ULL: RR omits metadata on routes with RT=ULL when advertising to UPF-1.
+   - UPF-2 does not send MDF: it receives routes with metadata unchanged.
+    ]]></artwork>
+  </figure>
+
+  <section anchor="appendix-5g-service-classing" title="Service-Class RTs and MDF">
+    <t>
+      Operators define a small, stable set of <em>service-class RTs</em> to delineate which groups of routes may carry
+      service metadata (e.g., ultra-low-latency vs. best-effort). Exporters tag routes with both a base RT (for
+      reachability/membership) and a service-class RT. MDF then keys on the service-class RT to control metadata
+      delivery, while RTC (RFC 4684) and normal import/export policy remain keyed to the base RT so reachability is
+      unaffected.
+    </t>
+  </section>
+
+  <section anchor="appendix-5g-procedure" title="Operational Procedure (Example)">
+  <ol spacing="compact">
+    <li><spanx style="strong">Define service classes:</spanx> Choose a minimal set of RTs representing classes that may carry metadata (e.g., RT-ULL, RT-VID, RT-ML). Document ownership and intended use.</li>
+    <li><spanx style="strong">Tag exports:</spanx> Data center exporters attach a base RT (VPN/customer) and a service-class RT to the same NLRI when metadata may accompany the route.</li>
+    <li><spanx style="strong">Enable MDF on RRs:</spanx> RRs support the MDF SAFI and omit metadata per-peer when an MDF NLRI matches the service-class RT.</li>
+    <li><spanx style="strong">Ingress selection:</spanx> UPFs/ingress nodes that do not use metadata advertise MDF NLRIs for the relevant service-class RTs; nodes that need metadata do not send MDF.</li>
+    <li><spanx style="strong">Adjust dynamically:</spanx> As UE placement or service location changes, ingress nodes add/withdraw MDF entries to tune metadata reception over time.</li>
+    <li><spanx style="strong">Telemetry (recommended):</spanx> Expose per-peer MDF entry counts, “metadata omitted” counters, and last-change timestamps to validate behavior.</li>
+  </ol>
+</section>
+
+
+<section anchor="appendix-5g-benefits" title="Benefits in 5G">
+  <ul spacing="compact">
+    <li>
+      <spanx style="strong">Control-plane scale:</spanx> Limits fast-changing metadata propagation to UPFs
+      and routers directly attached to UPFs, reducing UPDATE size and processing load on Route Reflectors
+      and Provider Edge routers while preserving full reachability.
+    </li>
+    <li>
+      <spanx style="strong">Service agility:</spanx> Supports dynamic changes in metadata subscription as new
+      UEs (for example, drones or autonomous vehicles) roam into or away from UPFs. When a UE moves to a new
+      UPF, that UPF can dynamically express interest in receiving metadata needed for optimal path selection;
+      when the UE leaves, the UPF withdraws its interest, preventing unnecessary metadata distribution.
+    </li>
+    <li>
+      <spanx style="strong">Operational safety:</spanx> Receiver-driven and RT-scoped; enables incremental rollout
+      without impacting route propagation for other peers or service classes.
+    </li>
+  </ul>
+</section>
+
+  <section anchor="appendix-5g-interop" title="Interoperability Notes">
+    <t>
+      MDF complements RTC: RTC constrains <em>route</em> flooding; MDF constrains <em>metadata</em> attachment to those
+      routes for specific peers :contentReference[oaicite:7]{index=7}. MDF is carried in
+      MP\_REACH/MP\_UNREACH with AFI=IPv4|IPv6 and a dedicated SAFI; the Next Hop length is 0 for MDF NLRIs.
+    </t>
+  </section>
+</section>
+
+  </back>
+</rfc>
